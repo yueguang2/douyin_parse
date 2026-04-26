@@ -3,6 +3,8 @@ Douyin watermark-free video parser (requests + a_bogus + X-Bogus)
 Input: share URL, Output: watermark-free video URL
 """
 
+from __future__ import annotations
+
 import re
 import requests
 from urllib.parse import quote
@@ -782,4 +784,3 @@ class DouyinVideoParser:
 def get_nwm_url(share_url: str) -> str | None:
     """简化调用：输入分享链接，输出无水印真实地址"""
     return DouyinVideoParser().parse_to_nwm_url(share_url)
-

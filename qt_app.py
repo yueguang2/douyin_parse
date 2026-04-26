@@ -2,6 +2,8 @@
 Douyin Video Downloader - Qt6 GUI Application
 Full version with auto cookie acquisition support
 """
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -378,6 +380,10 @@ class ParseUserWorker(QThread):
 
     def run(self):
         url = self.url
+        if "douyin.com/note/" in url:
+            self.result.emit([url], url)
+            return
+
         if "douyin.com/video/" in url or "v.douyin.com/" in url:
             user_home = self.parser.get_user_home_from_video_url(url)
             if not user_home:
@@ -553,7 +559,11 @@ class CookieWorker(QThread):
 
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                try:
+                    browser = p.chromium.launch(headless=True)
+                except Exception:
+                    self.status.emit("内置Chromium不可用，尝试使用系统Chrome...")
+                    browser = p.chromium.launch(channel="chrome", headless=True)
                 context = browser.new_context(
                     viewport={"width": 1280, "height": 720},
                     user_agent=(
@@ -1103,6 +1113,12 @@ class MainWindow(QMainWindow):
 
     def _on_single_download(self):
         content_type = self.single_download_btn.property("content_type") or "video"
+        info = {
+            "url": self.single_input.text().strip(),
+            "content_type": content_type,
+            "desc": self.single_download_btn.property("desc"),
+            "aweme_id": self.single_download_btn.property("aweme_id"),
+        }
         
         if content_type == "video":
             # Video download
@@ -1125,99 +1141,37 @@ class MainWindow(QMainWindow):
             if not url:
                 QMessageBox.warning(self, "错误", "未找到可用的视频地址")
                 return
-            
-            os.makedirs(self.save_dir, exist_ok=True)
-            desc = self.single_download_btn.property("desc") or ""
-            aweme_id = self.single_download_btn.property("aweme_id") or "douyin"
-            
-            # Add quality suffix to filename if selected
-            quality_suffix = ""
-            if selected_quality:
-                ratio = selected_quality.get("ratio", "")
-                if ratio:
-                    quality_suffix = f"_{ratio}"
-            
-            name = safe_filename(desc, aweme_id) + quality_suffix + ".mp4"
-            path = os.path.join(self.save_dir, name)
 
-            self.single_progress.setVisible(True)
-            self.single_progress.setValue(0)
+            info["nwm_url"] = url
+            info["qualities"] = [selected_quality] if selected_quality else qualities
 
-            def _cb(p):
-                self.single_progress.setValue(p)
-
-            ok = download_file(url, path, progress_cb=_cb)
-            QMessageBox.information(self, "下载", "完成" if ok else "失败")
-            self.single_progress.setVisible(False)
-        
         elif content_type == "image":
             # Album download
             image_data = self.single_download_btn.property("image_data") or {}
             image_urls = image_data.get("image_urls", [])
-            
+
             if not image_urls:
                 QMessageBox.warning(self, "错误", "未找到可用的图片地址")
                 return
-            
-            os.makedirs(self.save_dir, exist_ok=True)
-            desc = self.single_download_btn.property("desc") or ""
-            aweme_id = self.single_download_btn.property("aweme_id") or "douyin"
-            
-            # Create folder for album
-            folder_name = safe_filename(desc, aweme_id)
-            album_dir = os.path.join(self.save_dir, folder_name)
-            os.makedirs(album_dir, exist_ok=True)
-            
-            self.single_progress.setVisible(True)
-            self.single_progress.setRange(0, len(image_urls))
-            self.single_progress.setValue(0)
-            
-            # Check if these are live images
-            is_live = image_data.get("is_live", False)
-            
-            success = 0
-            for idx, img_url in enumerate(image_urls, start=1):
-                try:
-                    # Determine file extension first
-                    url_lower = img_url.lower()
-                    if is_live:
-                        # Live images are videos, save as mp4
-                        ext = ".mp4"
-                    elif ("gif" in url_lower or url_lower.endswith(".gif") or ".gif?" in url_lower):
-                        ext = ".gif"
-                    elif ("webp" in url_lower or url_lower.endswith(".webp") or ".webp?" in url_lower):
-                        ext = ".webp"
-                    elif ("png" in url_lower or url_lower.endswith(".png") or ".png?" in url_lower):
-                        ext = ".png"
-                    else:
-                        ext = ".jpg"  # Default to jpg
-                    
-                    img_name = f"{idx:03d}{ext}"
-                    img_path = os.path.join(album_dir, img_name)
-                    
-                    # For live images (MP4 videos), use download_file function for better support
-                    if is_live:
-                        def _cb(p):
-                            self.single_progress.setValue(int((idx - 1) * 100 / len(image_urls) + p / len(image_urls)))
-                        ok = download_file(img_url, img_path, progress_cb=_cb)
-                        if ok:
-                            success += 1
-                    else:
-                        # For static images, use simple download
-                        resp = requests.get(img_url, timeout=30, stream=True, headers={"User-Agent": self.parser.user_agent})
-                        if resp.status_code == 200:
-                            with open(img_path, "wb") as f:
-                                for chunk in resp.iter_content(chunk_size=8192):
-                                    if chunk:
-                                        f.write(chunk)
-                            success += 1
-                except Exception:
-                    pass
-                
-                self.single_progress.setValue(idx)
-            
-            QMessageBox.information(self, "下载", f"完成 {success}/{len(image_urls)}")
-            self.single_progress.setVisible(False)
+
+            info["image_data"] = image_data
+            info["image_count"] = len(image_urls)
+
+        self.single_progress.setRange(0, 100)
+        self.single_progress.setVisible(True)
+        self.single_progress.setValue(0)
+        self.single_download_btn.setEnabled(False)
+
+        self.single_download_worker = DownloadWorker(self.parser, [info], self.save_dir)
+        self.single_download_worker.progress.connect(self.single_progress.setValue)
+        self.single_download_worker.status.connect(lambda _: None)
+        self.single_download_worker.done.connect(self._single_download_done)
+        self.single_download_worker.start()
+
+    def _single_download_done(self, success: int, total: int):
+        self.single_progress.setVisible(False)
+        self.single_download_btn.setEnabled(True)
+        QMessageBox.information(self, "下载", "完成" if success == total else f"完成 {success}/{total}")
 
     def _on_user_parse(self):
         url = self.user_input.text().strip()
@@ -1438,4 +1392,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

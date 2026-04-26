@@ -1,0 +1,4 @@
+requests
+gmssl
+PySide6
+playwright

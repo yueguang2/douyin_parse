@@ -5,11 +5,11 @@
 ## 📦 创建Release步骤
 
 ### 1. 访问GitHub仓库
-打开 https://github.com/DLWangSan/douyin_parse
+打开 https://github.com/yueguang2/douyin_parse
 
 ### 2. 创建Release
 - 点击右侧 **"Releases"** → **"Draft a new release"**
-- 或者直接访问：https://github.com/DLWangSan/douyin_parse/releases/new
+- 或者直接访问：https://github.com/yueguang2/douyin_parse/releases/new
 
 ### 3. 填写Release信息
 

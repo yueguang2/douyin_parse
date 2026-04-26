@@ -75,11 +75,11 @@
 
 ```bash
 # 1. 克隆或下载项目
-git clone <repository-url>
-cd dy_cursor
+git clone https://github.com/yueguang2/douyin_parse.git
+cd douyin_parse
 
 # 2. 安装依赖
-pip install requests PySide6 playwright
+pip install -r requirements.txt
 
 # 3. 安装Playwright浏览器（仅完整版需要）
 playwright install chromium
